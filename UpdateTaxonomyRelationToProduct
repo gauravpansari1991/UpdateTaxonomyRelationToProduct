@@ -1,0 +1,119 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Stylelabs.M.Base.Querying;
+using Stylelabs.M.Base.Querying.Filters;
+using Stylelabs.M.Framework.Essentials.LoadConfigurations;
+using Stylelabs.M.Framework.Essentials.LoadOptions;
+using Stylelabs.M.Sdk.Contracts.Base;
+using CsvHelper;
+using System.Globalization;
+using CsvHelper.Configuration.Attributes;
+
+List<string> productNames = new List<string>();
+var records = //read from csv or others files
+foreach (var record in records)
+{  
+  productNames.Add(record.ProductName);
+}
+
+// Get mclient by passing username password and api endpoints
+ContentHubClientFactory _clientFactory = new ContentHubClientFactory();
+var mClient = _clientFactory.CreateClient();
+
+int roundNum = 0;
+foreach (var productName in productNames)
+{
+  Console.WriteLine($"ProductName  {productName}");
+  // Query to get product via product name from content hub
+  var productQuery = new Query
+  {
+      Filter = new CompositeQueryFilter()
+      {
+          Children = new QueryFilter[] {
+              new DefinitionQueryFilter {
+                  Name =  CustomConstants.Product.Defintion
+              },
+                  new PropertyQueryFilter {
+                  Property = CustomConstants.Product.Fields.ProductName,
+                  Value = productName,
+                  DataType = FilterDataType.String
+              }
+          },
+          CombineMethod = CompositeFilterOperator.And
+      }
+  };
+
+  // Get required culture
+  System.Globalization.CultureInfo enCultureInfo = new System.Globalization.CultureInfo("en-US"); //change culture here
+
+  // Load configuration - Pass properties you want, I am passing all
+  EntityLoadConfiguration propertyLoadConfig = new EntityLoadConfiguration()
+                {
+                    PropertyLoadOption = PropertyLoadOption.All,
+                    RelationLoadOption = new RelationLoadOption("testgroup.test"), // Add taxonony relation here that you want to update
+                    CultureLoadOption = CultureLoadOption.All
+                };
+
+  // Executing query
+  var productQueryResult = await mClient.Querying.QueryIdsAsync(productQuery);
+
+  if ((productQueryResult?.Items.Count > 0))
+  {
+      long? productId = productQueryResult?.Items.ToList().FirstOrDefault();
+      Console.WriteLine($"ProductId  {productId}");
+
+      // Get product via productId
+      var _product = await mClient.Entities.GetAsync(productId.Value, propertyLoadConfig);
+
+      if (_product != null)
+      {
+          var props = ((Stylelabs.M.Sdk.Models.Base.EntityBase)_product).Properties;
+          var contentHubProperties = props.Select(x => x.Name).Distinct();
+
+          CHProduct matchedRecord = new CHProduct(); //create a CHProduct class with required properties
+          foreach (var propertyKey in contentHubProperties)
+          {
+              object propertyValue = null;
+              if (propertyKey == "ProductName")
+              {                  
+                  var productNameInCH = GetMultiLanguagePropertyValue<object>(_product, propertyKey, enCultureInfo);
+                  matchedRecord = records.FirstOrDefault(i => i.ProductName.Equals(productNameInCH));
+              }
+          }
+
+          if (matchedRecord != null)
+          {
+              // Set property here you want to update
+              IRelation relation = _product.GetRelation("testgroup.test", RelationRole.Child);
+
+              if (relation != null && !string.IsNullOrEmpty(matchedRecord.test)) // Check if taxonomy relation field has value
+              {
+	          var taxID = await GetEntity(matchedRecord.FontColour);
+               	  List<long> IDs = relation.GetIds().ToList();
+
+	          if (!IDs.Contains(taxID.Id.Value))
+	          {
+		      IDs.Add(taxID.Id.Value);
+	          }
+	          relation.SetIds(IDs.ToArray());
+             }
+                          
+          }
+
+          roundNum++;
+            
+          // Save product entity here
+          await mClient.Entities.SaveAsync(_product).ConfigureAwait(false);
+
+      }
+      else
+      {
+          Console.WriteLine($"productName not found  {productName}");
+      }
+  }
+}
+Console.WriteLine($"total Product :  {roundNum}");
