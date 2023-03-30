@@ -1,0 +1,27 @@
+public async Task<IEntity> GetEntity(string identifier)
+{
+    ContentHubClientFactory _clientFactory = new ContentHubClientFactory();
+    var mClient = _clientFactory.CreateClient();
+    var _entity = await mClient.Entities.GetAsync(identifier, EntityLoadConfiguration.Full);
+    return _entity;
+}
+
+public T GetMultiLanguagePropertyValue<T>(IEntity entity, string property, CultureInfo cultureInfo)
+{
+     var contentHubProperty = entity.GetProperty(property);
+     var propertyValue = default(T);
+
+     if (contentHubProperty != null)
+     {
+         if (contentHubProperty.IsMultiLanguage)
+         {
+             propertyValue = entity.GetPropertyValue<T>(property, cultureInfo);
+         }
+         else
+         {
+             propertyValue = entity.GetPropertyValue<T>(property);
+         }
+     }
+
+     return propertyValue;
+ }
